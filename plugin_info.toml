@@ -1,14 +1,13 @@
 ## To modify by developer(s) of the plugin
 
 [plugin-info]
-SHORT_PLUGIN_NAME = 'template'  #to be modified, for instance daqmx then rename the module name:
-# (pymodaq_plugins_template become pymodaq_plugins_daqmx for instance)
+SHORT_PLUGIN_NAME = 'surfaceconcept'
 
-package-url = 'https://github.com/PyMoDAQ/pymodaq_plugins_template' #to modify
-description = 'some word about your plugin'
+package-url = 'https://github.com/NicolasGuenaux/pymodaq_plugins_surfaceconcept'
+description = 'a Time-to-Digital Converter (TDC) plugin that records time of arrival type of events : it saves raw data and plots histograms from it'
 
-author = 'Author Name'
-author-email = 'Author email'
+author = 'Nicolas Guénaux'
+author-email = 'nicolas.guenaux@cea.fr'
 license = 'MIT'
 
 [plugin-install]

@@ -25,8 +25,7 @@ Use this template to create a repository on your account and start the developme
 Authors
 =======
 
-* First Author  (myemail@xxx.org)
-* Other author (myotheremail@xxx.org)
+* Nicolas Guénaux (nicolas.guenaux@cea.fr)
 
 .. if needed use this field
 
