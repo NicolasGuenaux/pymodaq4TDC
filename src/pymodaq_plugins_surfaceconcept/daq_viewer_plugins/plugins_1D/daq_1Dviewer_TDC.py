@@ -1,21 +1,16 @@
 import numpy as np
+from fast_histogram import histogram1d
+
 from pymodaq.utils.daq_utils import ThreadCommand
 from pymodaq.utils.data import DataFromPlugins, Axis, DataToExport
 from pymodaq.control_modules.viewer_utility_classes import DAQ_Viewer_base, comon_parameters, main
 from pymodaq.utils.parameter import Parameter
+from tdc_wrapper import BdcTdcWrapper
+
+local_path = "O:\\lidyl\\atto\\Asterix\\NicolasG\\register_tdc_data_here"
 
 
-class PythonWrapperOfYourInstrument:
-    #  TODO Replace this fake class with the import of the real python wrapper of your instrument
-    pass
-
-# TODO:
-# (1) change the name of the following class to DAQ_1DViewer_TheNameOfYourChoice
-# (2) change the name of this file to daq_1Dviewer_TheNameOfYourChoice ("TheNameOfYourChoice" should be the SAME
-#     for the class name and the file name.)
-# (3) this file should then be put into the right folder, namely IN THE FOLDER OF THE PLUGIN YOU ARE DEVELOPING:
-#     pymodaq_plugins_my_plugin/daq_viewer_plugins/plugins_1D
-class DAQ_1DViewer_Template(DAQ_Viewer_base):
+class DAQ_1DViewer_TDC(DAQ_Viewer_base):
     """ Instrument plugin class for a 1D viewer.
     
     This object inherits all functionalities to communicate with PyMoDAQ’s DAQ_Viewer module through inheritance via
@@ -38,19 +33,66 @@ class DAQ_1DViewer_Template(DAQ_Viewer_base):
 
     """
     params = comon_parameters+[
-        ## TODO for your custom plugin
-        # elements to be added here as dicts in order to control your custom stage
+        # the nbr of measurement parameter will be implemented in an improved version of the plugin
+        # {'title': 'Nbr of measurements:', 'name': 'meas_nbr', 'type': 'int', 'value': 1, 'min': 1},
+        {'title': 'Line Settings:', 'name': 'line_settings', 'type': 'group', 'expanded': False, 'children': [
+            {'title': 'CH1 Settings:', 'name': 'ch1_settings', 'type': 'group', 'expanded': True, 'children':
+                [{'title': 'Enabled?:', 'name': 'enabled', 'type': 'bool', 'value': True}]},
+            {'title': 'CH2 Settings:', 'name': 'ch2_settings', 'type': 'group', 'expanded': True, 'children':
+                [{'title': 'Enabled?:', 'name': 'enabled', 'type': 'bool', 'value': False}]},
+        ]},
+
+        {'title': 'Acquisition:', 'name': 'acquisition', 'type': 'group', 'expanded': True, 'children': [
+            {'title': 'Acq. time (ms):', 'name': 'acq_time', 'type': 'int', 'value': 10, 'min': 1},
+            {'title': 'Resolution (ns):', 'name': 'resolution', 'type': 'float', 'value': 1, 'min': 0},
+            {'title': 'Time window (ns):', 'name': 'window', 'type': 'float', 'value': 1, 'min': 0,
+             'readonly': True, 'enabled': False, 'siPrefix': True},
+            {'title': 'Nbins:', 'name': 'nbins', 'type': 'list', 'value': 1024,
+             'limits': [1024 * (2 ** lencode) for lencode in range(6)]},
+        ]},
         ############
         ]
 
-    def ini_attributes(self):
-        #  TODO declare the type of the wrapper (and assign it to self.controller) you're going to use for easy
-        #  autocompletion
-        self.controller: PythonWrapperOfYourInstrument = None
+    def __init__(self, parent=None, params_state=None):
 
-        # TODO declare here attributes you want/need to init with a default value
+        super().__init__(parent, params_state) #initialize base class with common attributes and methods
 
+        self.device = None
         self.x_axis = None
+        self.controller = None
+        self.datas = None  # list of numpy arrays, see set_acq_mode
+        self.acq_done = False
+        self.Nchannels = 0
+        self.channels_enabled = {'CH1': {'enabled': True, 'index': 0}, 'CH2': {'enabled': False, 'index': 1}}
+        self.h5saver = None
+        self.timestamp_array = None
+        self.ns_time_window = 1000
+        self.ns_resolution = 5
+        self.nbins = int(self.ns_time_window / self.ns_resolution)
+
+
+    def ini_attributes(self):
+        self.controller: BdcTdcWrapper
+
+    @classmethod
+    def extract_histogram(cls, raw_ps_times, Nbins, ps_time_window=None, channel=0):
+        """
+        Extract a histogram from raw data times in ps
+        Args:
+            raw_ps_times: (ndarray of int) electron arrival times
+            Ntime: (int) the number of bins
+            ps_time_window: (int) the maximum time value in ps
+            channel: (int) marker of the specific channel (0 or 1) for channel 1 or 2
+
+        Returns:
+        ndarray: time of arrival histogram
+        """
+        hist = histogram1d(raw_ps_times, Nbins, (0, int(ps_time_window)-1))
+        return hist
+
+    def emit_log(self, string):
+        self.emit_status(ThreadCommand('Update_Status', [string, 'log']))
+
 
     def commit_settings(self, param: Parameter):
         """Apply the consequences of a change of value in the detector settings
@@ -60,11 +102,16 @@ class DAQ_1DViewer_Template(DAQ_Viewer_base):
         param: Parameter
             A given parameter (within detector_settings) whose value has been changed by the user
         """
-        ## TODO for your custom plugin
-        if param.name() == "a_parameter_you've_added_in_self.params":
-           self.controller.your_method_to_apply_this_param_change()
-#        elif ...
-        ##
+        if param.name() == 'resolution':    # we choose the window to remain the same --> the nbins changes
+            self.ns_resolution = param.value()
+            self.nbins = int(self.ns_time_window / self.ns_resolution)
+        if param.name() == 'nbins':         # we choose the window to remain the same --> the resolution changes
+            self.nbins = param.value()
+            self.ns_resolution = self.ns_time_window / self.nbins
+        if param.name() == 'window':        # we choose the nbins to remain the same --> the resolution changes
+            self.ns_time_window = param.value()
+            self.ns_resolution = self.ns_time_window / self.nbins
+
 
     def ini_detector(self, controller=None):
         """Detector communication initialization
