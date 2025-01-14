@@ -1,9 +1,11 @@
+# from joblib.parallel import method
+
 import scTDC
 import time
-import timeit
+# import timeit
 import numpy as np
 from queue import Queue
-import os
+# import os
 
 # the next three lines should be implemented elsewhere, as attributes for instance
 # NR_OF_MEASUREMENTS = 3    # number of measurements
@@ -14,13 +16,10 @@ import os
 QUEUE_DATA = 0
 QUEUE_ENDOFMEAS = 1
 
-tdc = scTDC.Device(autoinit=False)
-# initialize TDC --- and check for error!
-retcode, errmsg = tdc.initialize()
-if retcode < 0:
-    print("error during init:", retcode, errmsg)
-else:
-    print("successfully initialized")
+device = scTDC.Device(autoinit=False)
+# Value by which the raw data should be multiplied to get ps data arrays
+digital_time_bin_resolution = 27.4
+
 
 class BufDataCB(scTDC.buffered_data_callbacks_pipe):
 
@@ -72,16 +71,51 @@ class BdcTdcWrapper:
         # self.meas_remaining = self.meas_nbr
         self.exposure_ms = 10
         self.output_txtfile_name = "tmp_textfile.txt" # this file will be overwritten!
-
-    def open_communication(self):
+        self.data_length = 1000
         # open a BUFFERED_DATA_CALLBACKS pipe
-        self.bufdatacb = BufDataCB(tdc.lib, tdc.dev_desc)
-        return
+        self.bufdatacb = BufDataCB(device.lib, device.dev_desc)
+
+    @staticmethod
+    def open_communication():
+        # initialize TDC --- and check for error!
+        retcode, errmsg = device.initialize()
+        if retcode < 0:
+            print("error during init:", retcode, errmsg)
+            return False
+        else:
+            print("successfully initialized")
+            return True
+
+    @classmethod
+    # define a closure that checks return codes for errors and does clean up
+    def errorcheck(cls, retcode):
+        if retcode < 0:
+            print(device.lib.sc_get_err_msg(retcode))
+            return True
+        else:
+            return False
+
+    def set_exposure(self, ms_value):
+        self.exposure_ms = ms_value
+
+    def set_data_length(self, d_length):
+        self.data_length = d_length
+
 
     def get_data(self):
-        time = self.exposure_ms
         # start a first measurement
-        retcode = self.bufdatacb.start_measurement(time)
+        retcode = self.bufdatacb.start_measurement(self.exposure_ms)
+        if self.errorcheck(retcode):
+            self.bufdatacb.close()
+            device.deinitialize()
 
+        eventtype, data = self.bufdatacb.queue.get()  # waits until element available
+        # data = self.process_data(data, self.data_length)
+        return data
 
+    def close_communication(self):
+        time.sleep(0.1)
+        # clean up
+        self.bufdatacb.close()  # closes the user callbacks pipe, method inherited from base class
+        device.deinitialize()
 
